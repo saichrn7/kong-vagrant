@@ -62,7 +62,7 @@ fi
 
 if [ $KONG_NUM_VERSION -ge 010300 ]; then
   # use Bionic now instead of Trusty
-  KONG_DOWNLOAD_URL="https://bintray.com/kong/kong-deb/download_file?file_path=kong-${KONG_VERSION}.bionic.amd64.deb"
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-1.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
 fi
 
 if [ $KONG_NUM_VERSION -ge 020000 ]; then
