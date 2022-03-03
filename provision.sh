@@ -28,7 +28,7 @@ if [ "$CASSANDRA_VERSION" = "2" ]; then
    CASSANDRA_VERSION=2.2.13
    CASSANDRA_VERSION_REPO=22x
 else
-   CASSANDRA_VERSION=3.11.6
+   CASSANDRA_VERSION=3.11.12
    CASSANDRA_VERSION_REPO=311x
 fi
 
@@ -51,7 +51,7 @@ fi
 
 if [ $KONG_NUM_VERSION -ge 001500 ]; then
   # use Bionic now instead of Trusty
-  KONG_DOWNLOAD_URL="https://bintray.com/kong/kong-deb/download_file?file_path=kong-${KONG_VERSION}.bionic.all.deb"
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-1.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
 
   # Let's enable transparent listening option as well
   KONG_PROXY_LISTEN="0.0.0.0:8000 transparent, 0.0.0.0:8443 transparent ssl"
