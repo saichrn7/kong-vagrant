@@ -25,7 +25,7 @@ echo "Installing Kong version: $KONG_VERSION"
 echo "*************************************************************************"
 
 if [ "$CASSANDRA_VERSION" = "2" ]; then
-   CASSANDRA_VERSION=2.2.13
+   CASSANDRA_VERSION=2.2.19
    CASSANDRA_VERSION_REPO=22x
 else
    CASSANDRA_VERSION=3.11.12
@@ -40,7 +40,7 @@ KONG_ADMIN_LISTEN="0.0.0.0:8001"
 KONG_ADMIN_LISTEN_SSL="0.0.0.0:8444"
 
 if [ $KONG_NUM_VERSION -gt 001003 ]; then
-  KONG_DOWNLOAD_URL="https://bintray.com/kong/kong-deb/download_file?file_path=kong-${KONG_VERSION}.trusty.all.deb"
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-0.x-ubuntu-trusty/pool/all/k/kong-community-edition/kong-community-edition_${KONG_VERSION}_all.deb"
 fi
 
 if [ $KONG_NUM_VERSION -ge 001300 ]; then
@@ -51,7 +51,7 @@ fi
 
 if [ $KONG_NUM_VERSION -ge 001500 ]; then
   # use Bionic now instead of Trusty
-  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-1.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-0.x-ubuntu-bionic/pool/all/k/kong-community-edition/kong-community-edition_${KONG_VERSION}_all.deb"
 
   # Let's enable transparent listening option as well
   KONG_PROXY_LISTEN="0.0.0.0:8000 transparent, 0.0.0.0:8443 transparent ssl"
@@ -61,7 +61,7 @@ if [ $KONG_NUM_VERSION -ge 001500 ]; then
 fi
 
 if [ $KONG_NUM_VERSION -ge 010300 ]; then
-  # use Bionic now instead of Trusty
+  # download name changed
   KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-1.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
 fi
 
@@ -71,7 +71,8 @@ if [ $KONG_NUM_VERSION -ge 020000 ]; then
   unset KONG_STREAM_LISTEN
   # update admin to defaults again, but on 0.0.0.0 instead of 127.0.0.1
   KONG_ADMIN_LISTEN="0.0.0.0:8001 reuseport backlog=16384, 0.0.0.0:8444 http2 ssl reuseport backlog=16384"
-  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-2.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
+  # use Xenial now instead of Bionic
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-2.x-ubuntu-focal/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
 fi
 
 sudo chown -R vagrant /usr/local
@@ -103,9 +104,6 @@ echo "*************************************************************************"
 echo "Setting up APT repositories"
 echo "*************************************************************************"
 
-wget -q -O - '$@' https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc | sudo -E apt-key add -
-sudo -E add-apt-repository "deb https://apt.postgresql.org/pub/repos/apt/ bionic-pgdg main"
-
 wget -q -O - '$@' https://www.apache.org/dist/cassandra/KEYS | sudo -E apt-key add -
 sudo -E add-apt-repository "deb http://www.apache.org/dist/cassandra/debian $CASSANDRA_VERSION_REPO main"
 
@@ -121,7 +119,10 @@ if [ $KONG_NUM_VERSION -ge 001500 ]; then
 fi
 
 sudo -E apt-get install -qq httpie jq
-sudo -E apt-get install -qq git curl make pkg-config unzip apt-transport-https language-pack-en libssl-dev m4 cpanminus
+sudo -E apt-get install -qq git curl make pkg-config unzip apt-transport-https \
+                            language-pack-en libssl-dev m4 cpanminus zlibc \
+                            zlib1g-dev libyaml-dev postgresql-common build-essential
+
 
 echo "*************************************************************************"
 echo "Installing test tools for Test::Nginx"
@@ -130,19 +131,17 @@ echo "*************************************************************************"
 cpanm -n -q Test::Nginx
 
 echo "*************************************************************************"
-echo "Installing zlib1g-dev required by kong 2.8.0"
-echo "*************************************************************************"
-
-sudo apt install zlib1g-dev
-
-echo "*************************************************************************"
 echo "Installing and configuring Postgres $POSTGRES_VERSION"
 echo "*************************************************************************"
 
 set +o errexit
-dpkg -f noninteractive --list postgresql-$POSTGRES_VERSION > /dev/null 2>&1
+
+sudo sh /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+sudo -E apt-get install --allow-unauthenticated -qq postgresql-$POSTGRES_VERSION
 if [ $? -ne 0 ]; then
-sudo -E apt-get install -qq postgresql-$POSTGRES_VERSION
+  echo "failed to install Postgres!"
+  exit 1
+fi
 
 # Configure Postgres
 sudo sed -i "s/#listen_address.*/listen_addresses '*'/" /etc/postgresql/$POSTGRES_VERSION/main/postgresql.conf
@@ -163,7 +162,6 @@ CREATE ROLE kong;
 ALTER ROLE kong WITH login;
 CREATE DATABASE kong OWNER kong;
 CREATE DATABASE kong_tests OWNER kong;
-CREATE DATABASE wicked OWNER kong;
 EOF
 
 psql -d kong -U postgres <<EOF
@@ -180,7 +178,6 @@ CREATE SCHEMA IF NOT EXISTS public AUTHORIZATION kong;
 GRANT ALL ON SCHEMA public TO kong;
 EOF
 
-fi
 set -o errexit
 
 echo "*************************************************************************"
@@ -189,9 +186,6 @@ echo "*************************************************************************"
 
 sudo -E apt-get install -qq redis-server
 sudo chown vagrant /var/log/redis/redis-server.log
-sudo sed -i 's/bind 127.0.0.1/bind 0.0.0.0/' /etc/redis/redis.conf
-sudo service redis-server stop
-sudo /usr/bin/redis-server /etc/redis/redis.conf
 
 echo "*************************************************************************"
 echo "Installing Cassandra $CASSANDRA_VERSION"
@@ -202,6 +196,10 @@ dpkg -f noninteractive --list cassandra > /dev/null 2>&1
 if [ $? -ne 0 ]; then
   echo "Installing Cassandra"
   sudo -E apt-get install -qq --allow-downgrades --allow-remove-essential --allow-change-held-packages cassandra=$CASSANDRA_VERSION
+  if [ $? -ne 0 ]; then
+    echo "failed to install Cassandra, might need to bump the version!"
+    exit 1
+  fi
   sudo /etc/init.d/cassandra restart
 fi
 
@@ -219,9 +217,8 @@ if [ $KONG_NUM_VERSION -lt 1000 ]; then
   sudo -E apt-get install -qq dnsmasq
 fi
 
-sudo -E dpkg -i kong.deb
+sudo -E apt-get install -y ./kong.deb
 rm kong.deb
-
 
 if [ -n "$KONG_UTILITIES" ]; then
   echo "*************************************************************************"
@@ -229,7 +226,7 @@ if [ -n "$KONG_UTILITIES" ]; then
   echo "*************************************************************************"
 
   # Install systemtap: https://openresty.org/en/build-systemtap.html
-  sudo -E apt-get install -qq build-essential zlib1g-dev elfutils libdw-dev gettext
+  sudo -E apt-get install -qq zlib1g-dev elfutils libdw-dev gettext
   wget -q http://sourceware.org/systemtap/ftp/releases/systemtap-4.0.tar.gz
   tar -xf systemtap-4.0.tar.gz
   pushd systemtap-4.0/
@@ -254,15 +251,27 @@ if [ -n "$KONG_UTILITIES" ]; then
   popd
 fi
 
+echo "*************************************************************************"
+echo "Installing Go compiler"
+echo "*************************************************************************"
+
+pushd /usr/local
+wget -q -O go.tar.gz https://golang.org/dl/go1.15.5.linux-amd64.tar.gz
+tar -xf go.tar.gz && rm go.tar.gz
+popd
 
 echo "*************************************************************************"
 echo "Update localization, paths, ulimit, etc."
 echo "*************************************************************************"
 
-echo 'alias ks="kong start -c kong.conf.default"' >> /home/vagrant/.bashrc
-echo 'alias kmu="kong migrations up -c kong.conf.default"' >> /home/vagrant/.bashrc
-echo 'alias kmr="kong migrations reset -c kong.conf.default --yes"' >> /home/vagrant/.bashrc
-echo 'alias kss="kong stop ; ks"' >> /home/vagrant/.bashrc
+if [ ! -f /home/vagrant/.bash_profile ]; then
+  echo "# Kong additions" > /home/vagrant/.bash_profile
+fi
+echo 'alias ks="kong start -c kong.conf.default"' >> /home/vagrant/.bash_profile
+echo 'alias kmu="kong migrations up -c kong.conf.default"' >> /home/vagrant/.bash_profile
+echo 'alias kmb="kong migrations bootstrap -c kong.conf.default"' >> /home/vagrant/.bash_profile
+echo 'alias kmr="kong migrations reset -c kong.conf.default --yes"' >> /home/vagrant/.bash_profile
+echo 'alias kss="kong stop ; ks"' >> /home/vagrant/.bash_profile
 
 export PATH=$PATH:/usr/local/bin:/usr/local/openresty/bin:/opt/stap/bin:/usr/local/stapxx
 
@@ -281,17 +290,17 @@ EOL
 
 
 # Adjust PATH for future SSH
-echo "export PATH=/usr/local/bin:/usr/local/openresty/bin:/opt/stap/bin:/usr/local/stapxx:/usr/local/openresty/nginx/sbin:/usr/local/openresty/luajit/bin:\$PATH:" >> /home/vagrant/.bashrc
+echo "export PATH=/usr/local/bin:/usr/local/openresty/bin:/opt/stap/bin:/usr/local/stapxx:/usr/local/openresty/nginx/sbin:/usr/local/openresty/luajit/bin:/usr/local/go/bin:\$PATH:" >> /home/vagrant/.bash_profile
 
 # Do the same for root so we access to profiling tools
-echo "export PATH=/usr/local/bin:/usr/local/openresty/bin:/opt/stap/bin:/usr/local/stapxx:/usr/local/openresty/nginx/sbin:/usr/local/openresty/luajit/bin:\$PATH" >> /root/.bashrc
+echo "export PATH=/usr/local/bin:/usr/local/openresty/bin:/opt/stap/bin:/usr/local/stapxx:/usr/local/openresty/nginx/sbin:/usr/local/openresty/luajit/bin:/usr/local/go/bin:\$PATH" >> /root/.bashrc
 
 # Copy host settings
 if [ -n "$LOGLEVEL" ]; then
-  echo "export KONG_LOG_LEVEL=$LOGLEVEL" >> /home/vagrant/.bashrc
+  echo "export KONG_LOG_LEVEL=$LOGLEVEL" >> /home/vagrant/.bash_profile
 fi
 if [ -n "$ANREPORTS" ]; then
-  echo "export KONG_ANONYMOUS_REPORTS=$ANREPORTS" >> /home/vagrant/.bashrc
+  echo "export KONG_ANONYMOUS_REPORTS=$ANREPORTS" >> /home/vagrant/.bash_profile
 fi
 
 # Create prefix (working directory) to the same location as source tree if available
@@ -299,32 +308,32 @@ if [ ! -d "/kong" ]; then
   sudo mkdir /kong
   sudo chown -R vagrant /kong
 fi
-echo "export KONG_PREFIX=/kong/servroot" >> /home/vagrant/.bashrc
+echo "export KONG_PREFIX=/kong/servroot" >> /home/vagrant/.bash_profile
 
 # Set admin listen addresses
-echo "export KONG_ADMIN_LISTEN=\"$KONG_ADMIN_LISTEN\"" >> /home/vagrant/.bashrc
+echo "export KONG_ADMIN_LISTEN=\"$KONG_ADMIN_LISTEN\"" >> /home/vagrant/.bash_profile
 if [ -n "$KONG_ADMIN_LISTEN_SSL" ]; then
-  echo "export KONG_ADMIN_LISTEN_SSL=\"$KONG_ADMIN_LISTEN_SSL\"" >> /home/vagrant/.bashrc
+  echo "export KONG_ADMIN_LISTEN_SSL=\"$KONG_ADMIN_LISTEN_SSL\"" >> /home/vagrant/.bash_profile
 fi
 
 # Set stream and proxy listen addresses for Kong > 0.15.0
 if [ $KONG_NUM_VERSION -ge 001500 ]; then
   if [ $KONG_NUM_VERSION -lt 020000 ]; then
-    echo "export KONG_PROXY_LISTEN=\"$KONG_PROXY_LISTEN\"" >> /home/vagrant/.bashrc
-    echo "export KONG_STREAM_LISTEN=\"$KONG_STREAM_LISTEN\"" >> /home/vagrant/.bashrc
+    echo "export KONG_PROXY_LISTEN=\"$KONG_PROXY_LISTEN\"" >> /home/vagrant/.bash_profile
+    echo "export KONG_STREAM_LISTEN=\"$KONG_STREAM_LISTEN\"" >> /home/vagrant/.bash_profile
   fi
 fi
 
 # Adjust LUA_PATH to find the source and plugin dev setup
-echo "export LUA_PATH=\"/kong/?.lua;/kong/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;;\"" >> /home/vagrant/.bashrc
-echo "if [ \$((1 + RANDOM % 20)) -eq 1 ]; then kong roar; fi" >> /home/vagrant/.bashrc
+echo "export LUA_PATH=\"/kong/?.lua;/kong/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;;\"" >> /home/vagrant/.bash_profile
+echo "if [ \$((1 + RANDOM % 20)) -eq 1 ]; then kong roar; fi" >> /home/vagrant/.bash_profile
 
 # Set Test::Nginx variables since it cannot have sockets on a mounted drive
-echo "export TEST_NGINX_NXSOCK=/tmp" >> /home/vagrant/.bashrc
+echo "export TEST_NGINX_NXSOCK=/tmp" >> /home/vagrant/.bash_profile
 
 # Set locale
-echo "export LC_ALL=en_US.UTF-8" >> /home/vagrant/.bashrc
-echo "export LC_CTYPE=en_US.UTF-8" >> /home/vagrant/.bashrc
+echo "export LC_ALL=en_US.UTF-8" >> /home/vagrant/.bash_profile
+echo "export LC_CTYPE=en_US.UTF-8" >> /home/vagrant/.bash_profile
 
 # Fix locale warning
 sudo echo "LC_CTYPE=\"en_US.UTF-8\"" >> /etc/default/locale
@@ -332,11 +341,6 @@ sudo echo "LC_ALL=\"en_US.UTF-8\"" >> /etc/default/locale
 
 # Assign permissions to "vagrant" user
 sudo chown -R vagrant /usr/local
-
-sudo mkdir -p /etc/kong
-echo "trusted_ips = 0.0.0.0/0,::/0" >> /etc/kong/kong.conf
-echo "" >> /etc/kong/kong.conf
-echo "lua_package_path=/kong/?.lua;/kong/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;/kong-plugin/kong/plugins/?;/kong-plugin/kong/plugins/?/?.lua" >> /etc/kong/kong.conf
 
 if [ $KONG_NUM_VERSION -ge 001500 ]; then
   if [ $KONG_NUM_VERSION -lt 020000 ]; then
@@ -347,20 +351,20 @@ if [ $KONG_NUM_VERSION -ge 001500 ]; then
 fi
 
 # store the Kong version build, and add a warning
-echo "export KONG_VERSION_BUILD=$KONG_VERSION"                     >> /home/vagrant/.bashrc
-echo "if [ -f \"/kong/bin/kong\" ]; then"                          >> /home/vagrant/.bashrc
-echo "  pushd /kong > /dev/null"                                   >> /home/vagrant/.bashrc
-echo "  LAST_TAG=\$(git describe --tags)"                          >> /home/vagrant/.bashrc
-echo "  if [ ! \"\$LAST_TAG\" == \"\$KONG_VERSION_BUILD\" ]; then" >> /home/vagrant/.bashrc
-echo "    echo \"*******************************************************************************\""   >> /home/vagrant/.bashrc
-echo "    echo \" WARNING: The Kong source in /kong has latest tag \$LAST_TAG\""                      >> /home/vagrant/.bashrc
-echo "    echo \"          whilst this vagrant box was build against version \$KONG_VERSION_BUILD.\"" >> /home/vagrant/.bashrc
-echo "    echo \"          Please make sure the checked-out version in /kong matches the\""           >> /home/vagrant/.bashrc
-echo "    echo \"          binaries of \$KONG_VERSION_BUILD.\""                                       >> /home/vagrant/.bashrc
-echo "    echo \"*******************************************************************************\""   >> /home/vagrant/.bashrc
-echo "  fi"                                                        >> /home/vagrant/.bashrc
-echo "  popd > /dev/null"                                          >> /home/vagrant/.bashrc
-echo "fi"                                                          >> /home/vagrant/.bashrc
+echo "export KONG_VERSION_BUILD=$KONG_VERSION"                     >> /home/vagrant/.bash_profile
+echo "if [ -f \"/kong/bin/kong\" ]; then"                          >> /home/vagrant/.bash_profile
+echo "  pushd /kong > /dev/null"                                   >> /home/vagrant/.bash_profile
+echo "  LAST_TAG=\$(git describe --tags)"                          >> /home/vagrant/.bash_profile
+echo "  if [ ! \"\$LAST_TAG\" == \"\$KONG_VERSION_BUILD\" ]; then" >> /home/vagrant/.bash_profile
+echo "    echo \"*******************************************************************************\""   >> /home/vagrant/.bash_profile
+echo "    echo \" WARNING: The Kong source in /kong has latest tag \$LAST_TAG\""                      >> /home/vagrant/.bash_profile
+echo "    echo \"          whilst this vagrant box was build against version \$KONG_VERSION_BUILD.\"" >> /home/vagrant/.bash_profile
+echo "    echo \"          Please make sure the checked-out version in /kong matches the\""           >> /home/vagrant/.bash_profile
+echo "    echo \"          binaries of \$KONG_VERSION_BUILD.\""                                       >> /home/vagrant/.bash_profile
+echo "    echo \"*******************************************************************************\""   >> /home/vagrant/.bash_profile
+echo "  fi"                                                        >> /home/vagrant/.bash_profile
+echo "  popd > /dev/null"                                          >> /home/vagrant/.bash_profile
+echo "fi"                                                          >> /home/vagrant/.bash_profile
 
 
 echo .
