@@ -348,6 +348,9 @@ sudo echo "LC_ALL=\"en_US.UTF-8\"" >> /etc/default/locale
 
 # Assign permissions to "vagrant" user
 sudo chown -R vagrant /usr/local
+echo "trusted_ips = 0.0.0.0/0,::/0" >> /etc/kong/kong.conf
+echo "" >> /etc/kong/kong.conf
+echo "lua_package_path=/kong/?.lua;/kong/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;/kong-plugin/?.lua;/kong-plugin/?/init.lua;/kong-plugin/kong/plugins/?;/kong-plugin/kong/plugins/?/?.lua" >> /etc/kong/kong.conf
 
 if [ $KONG_NUM_VERSION -ge 001500 ]; then
   if [ $KONG_NUM_VERSION -lt 020000 ]; then
