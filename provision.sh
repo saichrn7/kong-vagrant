@@ -71,6 +71,7 @@ if [ $KONG_NUM_VERSION -ge 020000 ]; then
   unset KONG_STREAM_LISTEN
   # update admin to defaults again, but on 0.0.0.0 instead of 127.0.0.1
   KONG_ADMIN_LISTEN="0.0.0.0:8001 reuseport backlog=16384, 0.0.0.0:8444 http2 ssl reuseport backlog=16384"
+  KONG_DOWNLOAD_URL="https://download.konghq.com/gateway-2.x-ubuntu-bionic/pool/all/k/kong/kong_${KONG_VERSION}_amd64.deb"
 fi
 
 sudo chown -R vagrant /usr/local
