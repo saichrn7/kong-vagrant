@@ -220,6 +220,13 @@ fi
 sudo -E apt-get install -y ./kong.deb
 rm kong.deb
 
+echo "*************************************************************************"
+echo "installing the luarock module which are used by clarivate"
+echo "*************************************************************************"
+luarocks install lua-resty-dns-client 4.1.2
+luarocks install lua-resty-iputils 0.3.0
+
+
 if [ -n "$KONG_UTILITIES" ]; then
   echo "*************************************************************************"
   echo "Installing systemtap, stapxx, and openresty-systemtap-toolkit"
