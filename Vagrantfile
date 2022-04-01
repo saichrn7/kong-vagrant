@@ -102,6 +102,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.network :forwarded_port, guest: 8444, host: 8444
   config.vm.network :forwarded_port, guest: 9000, host: 9000 # only used with TCP stream proxy with Kong >= 0.15.0
   config.vm.network :forwarded_port, guest: 5432, host: 65432
+  config.vm.network :forwarded_port, guest: 6379, host: 6379
 
   config.vm.provision "shell", path: "provision.sh",
      env: { "HTTP_PROXY": ENV["HTTP_PROXY"], "HTTPS_PROXY": ENV["HTTPS_PROXY"]},

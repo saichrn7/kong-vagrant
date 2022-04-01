@@ -162,6 +162,7 @@ CREATE ROLE kong;
 ALTER ROLE kong WITH login;
 CREATE DATABASE kong OWNER kong;
 CREATE DATABASE kong_tests OWNER kong;
+CREATE DATABASE wicked OWNER kong;
 EOF
 
 psql -d kong -U postgres <<EOF
@@ -186,6 +187,9 @@ echo "*************************************************************************"
 
 sudo -E apt-get install -qq redis-server
 sudo chown vagrant /var/log/redis/redis-server.log
+sudo sed -i 's/bind 127.0.0.1/bind 0.0.0.0/' /etc/redis/redis.conf
+sudo service redis-server stop
+sudo /usr/bin/redis-server /etc/redis/redis.conf
 
 echo "*************************************************************************"
 echo "Installing Cassandra $CASSANDRA_VERSION"
